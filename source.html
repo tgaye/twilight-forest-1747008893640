@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Twilight Forest</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #0a0a1a;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/p5@1.8.0/lib/p5.js"></script>
+
+<base target="_self">
+
+
+  <button id="fs-toggle">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M1.5 1H6v1.5H3v3H1.5V1zM10 1h4.5v4.5H13v-3h-3V1zM1.5 10.5H3v3h3V15H1.5v-4.5zM13 13.5v-3h1.5V15H10v-1.5h3z"></path>
+    </svg>
+  </button>
+    <script>
+        const sketch = (p) => {
+            let fireflies = [];
+            let mountains = [];
+            let stars = [];
+            let audioContext;
+            let oscillator;
+            let gainNode;
+            let lastClickTime = 0;
+            let bgGradient;
+            let maxFireflies = 500;
+            let quality = 1;
+            let frameRateMonitor = 0;
+            let baseHue = 200;
+            let mouseActive = false;
+            let mouseActiveTimer = 0;
+            let interactionRadius = 150;
+
+            p.setup = () => {
+                p.createCanvas(p.windowWidth, p.windowHeight);
+                p.colorMode(p.HSB, 360, 100, 100, 1);
+                p.noStroke();
+                p.ellipseMode(p.RADIUS);
+
+                // Create background gradient
+                bgGradient = p.createGraphics(p.width, p.height);
+                for (let y = 0; y < p.height; y++) {
+                    let inter = p.map(y, 0, p.height, 0, 1);
+                    let c = p.lerpColor(p.color(10, 80, 20), p.color(230, 90, 10), inter);
+                    bgGradient.stroke(c);
+                    bgGradient.line(0, y, p.width, y);
+                }
+
+                // Initialize mountains
+                createMountains();
+
+                // Initialize stars
+                for (let i = 0; i < 200; i++) {
+                    stars.push({
+                        x: p.random(p.width),
+                        y: p.random(p.height * 0.6),
+                        size: p.random(0.5, 3),
+                        twinkle: p.random(0.1, 0.3),
+                        brightness: p.random(60, 100)
+                    });
+                }
+
+                // Initialize fireflies
+                for (let i = 0; i < 100; i++) {
+                    addFirefly();
+                }
+
+                // Initialize audio context
+                try {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    gainNode = audioContext.createGain();
+                    gainNode.gain.value = 0;
+                    gainNode.connect(audioContext.destination);
+                } catch (e) {
+                    console.log("Web Audio API not supported");
+                }
+            };
+
+            function createMountains() {
+                mountains = [];
+                let layers = 3;
+                for (let l = 0; l < layers; l++) {
+                    let mountain = [];
+                    let steps = 20;
+                    let layerHeight = p.height * (0.6 + l * 0.1);
+                    let layerWidth = p.width * (1 + l * 0.2);
+                    let layerOffset = -p.width * l * 0.1;
+                    
+                    for (let i = 0; i <= steps; i++) {
+                        let x = p.map(i, 0, steps, layerOffset, layerOffset + layerWidth);
+                        let noiseVal = p.noise(i * 0.2, l * 100);
+                        let y = layerHeight + noiseVal * 50;
+                        mountain.push(p.createVector(x, y));
+                    }
+                    mountain.push(p.createVector(layerOffset + layerWidth, p.height));
+                    mountain.push(p.createVector(layerOffset, p.height));
+                    mountains.push({
+                        points: mountain,
+                        color: p.color(240, 50, 20 - l * 5, 0.8)
+                    });
+                }
+            }
+
+            function addFirefly(x, y) {
+                if (fireflies.length >= maxFireflies) return;
+                
+                let pos = x && y ? p.createVector(x, y) : p.createVector(
+                    p.random(p.width * 0.2, p.width * 0.8),
+                    p.random(p.height * 0.3, p.height * 0.9)
+                );
+                
+                fireflies.push({
+                    pos: pos,
+                    vel: p.createVector(p.random(-0.5, 0.5), p.random(-0.5, 0.5)),
+                    target: p.createVector(p.random(p.width * 0.2, p.width * 0.8), p.random(p.height * 0.3, p.height * 0.9)),
+                    size: p.random(2, 6),
+                    hue: baseHue + p.random(-30, 30),
+                    brightness: p.random(70, 100),
+                    pulseSpeed: p.random(0.01, 0.05),
+                    pulsePhase: p.random(p.TWO_PI),
+                    life: p.random(100, 500),
+                    maxLife: p.random(100, 500),
+                    attraction: p.random(0.005, 0.02)
+                });
+            }
+
+            p.draw = () => {
+                // Monitor frame rate and adjust quality
+                frameRateMonitor++;
+                if (frameRateMonitor % 60 === 0) {
+                    let currentFPS = p.frameRate();
+                    quality = p.constrain(p.map(currentFPS, 20, 60, 0.7, 1), 0.7, 1);
+                }
+
+                // Draw background
+                p.image(bgGradient, 0, 0);
+
+                // Draw stars
+                for (let star of stars) {
+                    let twinkle = p.sin(p.frameCount * star.twinkle) * 10;
+                    p.fill(50, 10, star.brightness + twinkle);
+                    p.ellipse(star.x, star.y, star.size * quality);
+                }
+
+                // Draw mountains
+                for (let mountain of mountains) {
+                    p.fill(mountain.color);
+                    p.beginShape();
+                    for (let pt of mountain.points) {
+                        p.vertex(pt.x, pt.y);
+                    }
+                    p.endShape(p.CLOSE);
+                }
+
+                // Update and draw fireflies
+                for (let i = fireflies.length - 1; i >= 0; i--) {
+                    let fly = fireflies[i];
+                    
+                    // Update position
+                    let mouseDist = p.dist(fly.pos.x, fly.pos.y, p.mouseX, p.mouseY);
+                    let mouseInfluence = 0;
+                    
+                    if (mouseActive && mouseDist < interactionRadius) {
+                        mouseInfluence = p.map(mouseDist, 0, interactionRadius, 1, 0);
+                        let angle = p.atan2(p.mouseY - fly.pos.y, p.mouseX - fly.pos.x);
+                        let force = p.createVector(p.cos(angle), p.sin(angle));
+                        force.mult(0.1 * mouseInfluence);
+                        fly.vel.add(force);
+                    }
+                    
+                    // Move toward target
+                    let targetForce = p5.Vector.sub(fly.target, fly.pos);
+                    targetForce.mult(fly.attraction);
+                    fly.vel.add(targetForce);
+                    
+                    // Limit speed
+                    fly.vel.limit(1 + mouseInfluence * 2);
+                    fly.pos.add(fly.vel);
+                    
+                    // Boundary check
+                    if (fly.pos.x < 0 || fly.pos.x > p.width || fly.pos.y < 0 || fly.pos.y > p.height) {
+                        fly.pos.x = p.constrain(fly.pos.x, 0, p.width);
+                        fly.pos.y = p.constrain(fly.pos.y, 0, p.height);
+                        fly.vel.mult(-0.5);
+                    }
+                    
+                    // Change target occasionally
+                    if (p.random() < 0.01) {
+                        fly.target.set(p.random(p.width * 0.2, p.width * 0.8), p.random(p.height * 0.3, p.height * 0.9));
+                    }
+                    
+                    // Pulsing brightness
+                    fly.pulsePhase += fly.pulseSpeed;
+                    let pulse = p.map(p.sin(fly.pulsePhase), -1, 1, 0.5, 1);
+                    
+                    // Draw firefly
+                    let glowSize = fly.size * 3 * pulse * quality;
+                    let glowAlpha = pulse * 0.3;
+                    
+                    // Glow effect
+                    p.fill(fly.hue, 80, fly.brightness, glowAlpha);
+                    p.ellipse(fly.pos.x, fly.pos.y, glowSize);
+                    
+                    // Core light
+                    p.fill(fly.hue, 80, fly.brightness);
+                    p.ellipse(fly.pos.x, fly.pos.y, fly.size * quality);
+                    
+                    // Life cycle
+                    fly.life--;
+                    if (fly.life <= 0) {
+                        fireflies.splice(i, 1);
+                        if (fireflies.length < maxFireflies * 0.8) {
+                            addFirefly();
+                        }
+                    }
+                }
+
+                // Mouse activity indicator
+                if (mouseActive) {
+                    mouseActiveTimer--;
+                    if (mouseActiveTimer <= 0) {
+                        mouseActive = false;
+                        if (gainNode) gainNode.gain.value = 0;
+                    }
+                    
+                    // Draw interaction aura
+                    p.fill(baseHue, 30, 100, 0.1);
+                    p.ellipse(p.mouseX, p.mouseY, interactionRadius * 2);
+                }
+            };
+
+            p.mouseMoved = () => {
+                mouseActive = true;
+                mouseActiveTimer = 30;
+                
+                // Gentle sound feedback
+                if (audioContext && gainNode) {
+                    let freq = p.map(p.mouseY, 0, p.height, 400, 800);
+                    let vol = p.map(p.mouseX, 0, p.width, 0.01, 0.05);
+                    
+                    if (!oscillator) {
+                        oscillator = audioContext.createOscillator();
+                        oscillator.type = 'sine';
+                        oscillator.frequency.value = freq;
+                        oscillator.connect(gainNode);
+                        oscillator.start();
+                    } else {
+                        oscillator.frequency.setValueAtTime(freq, audioContext.currentTime);
+                    }
+                    gainNode.gain.setTargetAtTime(vol, audioContext.currentTime, 0.1);
+                }
+                
+                // Attract nearby fireflies
+                for (let fly of fireflies) {
+                    let d = p.dist(fly.pos.x, fly.pos.y, p.mouseX, p.mouseY);
+                    if (d < interactionRadius) {
+                        let angle = p.atan2(p.mouseY - fly.pos.y, p.mouseX - fly.pos.x);
+                        let force = p.createVector(p.cos(angle), p.sin(angle));
+                        force.mult(0.5 * p.map(d, 0, interactionRadius, 1, 0));
+                        fly.vel.add(force);
+                    }
+                }
+            };
+
+            p.mouseDragged = () => {
+                p.mouseMoved();
+                
+                // Add more fireflies when dragging
+                if (p.frameCount % 3 === 0 && fireflies.length < maxFireflies) {
+                    addFirefly(p.mouseX + p.random(-20, 20), p.mouseY + p.random(-20, 20));
+                }
+            };
+
+            p.mouseClicked = () => {
+                // Create a burst of fireflies on click
+                let now = p.millis();
+                if (now - lastClickTime < 300) return; // Debounce
+                lastClickTime = now;
+                
+                for (let i = 0; i < 20 && fireflies.length < maxFireflies; i++) {
+                    addFirefly(p.mouseX + p.random(-50, 50), p.mouseY + p.random(-50, 50));
+                }
+                
+                // Visual ripple effect
+                for (let fly of fireflies) {
+                    let d = p.dist(fly.pos.x, fly.pos.y, p.mouseX, p.mouseY);
+                    if (d < 200) {
+                        let angle = p.atan2(fly.pos.y - p.mouseY, fly.pos.x - p.mouseX);
+                        let force = p.createVector(p.cos(angle), p.sin(angle));
+                        force.mult(p.map(d, 0, 200, 5, 0.5));
+                        fly.vel.add(force);
+                    }
+                }
+            };
+
+            p.touchStarted = () => {
+                p.mouseClicked();
+                return false;
+            };
+
+            p.windowResized = () => {
+                p.resizeCanvas(p.windowWidth, p.windowHeight);
+                bgGradient = p.createGraphics(p.width, p.height);
+                for (let y = 0; y < p.height; y++) {
+                    let inter = p.map(y, 0, p.height, 0, 1);
+                    let c = p.lerpColor(p.color(10, 80, 20), p.color(230, 90, 10), inter);
+                    bgGradient.stroke(c);
+                    bgGradient.line(0, y, p.width, y);
+                }
+                createMountains();
+            };
+        };
+
+        new p5(sketch);
+    
+  // Touch event handlers for mobile compatibility
+  p.touchMoved = function() {
+    // Forward touch events to mouse events
+    if (typeof p.mouseMoved === 'function') {
+      p.mouseMoved();
+    }
+    return false; // Prevent default
+  };
+  
+  p.touchStarted = function() {
+    // Forward to mousePressed
+    if (typeof p.mousePressed === 'function') {
+      p.mousePressed();
+    }
+    return false; // Prevent default
+  };
+  
+  p.touchEnded = function() {
+    // Forward to mouseReleased
+    if (typeof p.mouseReleased === 'function') {
+      p.mouseReleased();
+    }
+    return false; // Prevent default
+  };
+  // Fullscreen toggle
+  document.getElementById('fs-toggle').addEventListener('click', function() {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(err => {
+        console.log('Fullscreen request failed: ', err);
+      });
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      }
+    }
+  });
+  
+  // Hide fullscreen button after inactivity
+  const fsButton = document.getElementById('fs-toggle');
+  let timeout;
+  document.addEventListener('mousemove', function() {
+    fsButton.style.opacity = '0.3';
+    clearTimeout(timeout);
+    timeout = setTimeout(() => {
+      fsButton.style.opacity = '0';
+    }, 2000);
+  });
+  </script>
+
+              
+          
+                
+          
+              
